@@ -1,0 +1,615 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+
+
+
+
+
+# Research Question
+
+Kira Plastinina is a Russian brand that is sold through a defunct chain of retail stores in Russia, Ukraine, Kazakhstan, Belarus, China, Philippines, and Armenia. The brand’s Sales and Marketing team would like to understand their customer’s behavior from data that they have collected over the past year. More specifically, they would like to learn the characteristics of customer groups.
+
+
+
+# Problem Definition
+
+1. Perform clustering stating insights drawn from your analysis and visualizations.
+2. Upon implementation, provide comparisons between the approaches learned this week i.e. K-Means clustering vs Hierarchical clustering highlighting the strengths and limitations of each approach in the context of your analysis. 
+
+
+### Data description
+
+* The dataset consists of 10 numerical and 8 categorical attributes. The 'Revenue' attribute can be used as the class label.
+* "Administrative", "Administrative Duration", "Informational", "Informational Duration", "Product Related" and "Product Related Duration" represents the number of different types of pages visited by the visitor in that session and total time spent in each of these page categories. The values of these features are derived from the URL information of the pages visited by the user and updated in real-time when a user takes an action, e.g. moving from one page to another.
+* The "Bounce Rate", "Exit Rate" and "Page Value" features represent the metrics measured by "Google Analytics" for each page in the e-commerce site. 
+* The value of the "Bounce Rate" feature for a web page refers to the percentage of visitors who enter the site from that page and then leave ("bounce") without triggering any other requests to the analytics server during that session. 
+* The value of the "Exit Rate" feature for a specific web page is calculated as for all pageviews to the page, the percentage that was the last in the session.
+* The "Page Value" feature represents the average value for a web page that a user visited before completing an e-commerce transaction.
+* The "Special Day" feature indicates the closeness of the site visiting time to a specific special day (e.g. Mother’s Day, Valentine's Day) in which the sessions are more likely to be finalized with the transaction. The value of this attribute is determined by considering the dynamics of e-commerce such as the duration between the order date and delivery date. For example, for Valentina’s day, this value takes a nonzero value between February 2 and February 12, zero before and after this date unless it is close to another special day, and its maximum value of 1 on February 8. 
+* The dataset also includes the operating system, browser, region, traffic type, visitor type as returning or new visitor, a Boolean value indicating whether the date of the visit is weekend, and month of the year.
+
+
+# Experimental design
+
+1. Problem Definition
+
+2. Data Sourcing
+
+3. Check the Data
+
+4. Perform Data Cleaning
+
+5. Perform Exploratory Data Analysis
+
+6. Implement the Solution
+
+7. Challenge the Solution
+
+8. Follow up Questions
+
+
+# Data Sourcing
+```{r}
+### Loading dataset
+df <- read.csv('http://bit.ly/EcommerceCustomersDataset')
+```
+
+
+```{r}
+### Installing packages
+install.packages("psych")
+
+install.packages("Amelia")
+
+install.packages("vqv/ggbiplot")
+
+install.packages("gridExtra")
+
+install.packages("devtools")
+
+install.packages("GGally")
+
+install.packages("factoextra")
+```
+
+
+ 
+
+```{r load-packages, include=FALSE}
+library(dplyr)
+library(magrittr)
+library(knitr)
+library(purrr)
+library(dplyr)
+library(psych)
+library(tidyverse)
+library(Amelia)
+library(ggplot2)
+library(ggbiplot)
+library(corrplot)
+library(gridExtra)
+library(ggcorrplot)
+library(moments)
+library(devtools)
+library(cluster) 
+library(factoextra)
+library(GGally)
+```
+
+
+
+
+# Check the Data
+```{r}
+### Check the Data
+head(df)
+```
+
+
+```{r}
+### Getting the column names
+attributes(df)$names
+```
+
+
+
+```{r}
+### Getting the class ofthe data
+attributes(df)$class
+```
+
+
+
+
+```{r}
+### Taking a glimpse on some of the data in the dataframe
+glimpse(df)
+```
+
+
+
+```{r}
+### Checking some statistical summaries of the data
+summary(df)
+```
+
+
+
+```{r}
+### Checking for the dimensions of the dataframe
+dim(df)
+```
+Our data contains 18 columns and 12330  rows
+
+
+
+
+```{r}
+### Checking the number of unique columns
+cat.columns <- c("Month","VisitorType")
+no <- function(x) {  
+    nlevels(x)
+  }
+  
+number <- sapply(select(df, cat.columns), no)
+number
+
+```
+From the specified columns we observe that not column has unique values
+
+
+
+```{r}
+### Summary of numeric columns
+
+
+df %>%
+  select_if(is.numeric) %>%
+  map(~summary(.))
+```
+```{r}
+describe(df)
+```
+
+
+
+
+
+
+# Perform Data Cleaning
+
+```{r}
+### Changing the names of the columns to lower
+
+colnames(df) <- tolower(str_replace_all(colnames(df), c(' ' = '_')))
+colnames(df)
+```
+
+
+
+```{r}
+### Checking for Missing values
+
+colSums(is.na(df))
+
+```
+
+
+
+
+
+```{r}
+### Sum for Missing values
+sum(is.na(df))
+```
+
+```{r}
+### list of  Missing values
+list <- colnames(df)[apply(df,2, anyNA)]
+list
+```
+
+```{r}
+### Dealing with missing values
+data <- na.omit(df)
+```
+
+
+```{r}
+### Dealing with missing values
+data[is.na(data)] <- 0
+```
+
+
+```{r}
+### Checking the data type ofeach column
+sapply(data, class)
+```
+
+
+```{r}
+### Checking for duplicates
+
+anyDuplicated(data)
+```
+The data contains 159 duplicates which for a better accuracy will have to drop them.
+
+```{r}
+### Dealing with duppicates
+df1 <- data[-which(duplicated(data)),]
+anyDuplicated(df1)
+```
+
+
+```{r}
+# ##  Selecting numeric columns 
+num <- (select(df1,c("administrative","administrative_duration","informational","informational_duration","productrelated","productrelated_duration","bouncerates","exitrates","pagevalues","specialday","operatingsystems","browser","region","traffictype")))
+num
+```
+
+
+# Perform Exploratory Data Analysis
+
+###Univariate 
+
+### 1. Measures of Central Tendency
+
+### Mean
+```{r}
+### Mean of all numerical columns
+lapply(num, mean, na.rm = TRUE)
+```
+
+### Median
+```{r}
+### median of all numerical
+lapply(num, median, na.rm = TRUE)
+```
+
+### Mode
+```{r}
+### mode of all numerical
+Modes <- function(x) {
+  ux <- unique(x)
+  tab <- tabulate(match(x, ux))
+  ux[tab == max(tab)]
+}
+lapply(num, Modes)
+```
+
+### Measures of Dispersion
+```{r}
+### max of all numerical
+lapply(num, max)
+```
+
+### Mininum
+```{r}
+### max of all numerical
+lapply(num, min)
+```
+
+### Range
+```{r}
+### range of all numerical
+lapply(num, range)
+```
+
+
+### Quantile
+```{r}
+### Quantile of all numerical
+lapply(num, quantile)
+```
+
+### Varience
+```{r}
+### Varience of all numerical
+lapply(num, var)
+```
+
+
+
+### Standard deviation
+```{r}
+### Standard deviation of all numerical
+lapply(num, sd)
+```
+
+
+### Kurtosis
+```{r}
+### Kurtosis of column age
+kurtosis(num)
+```
+
+
+### Skewness
+```{r}
+### Skewness of column age
+skewness(num)
+```
+
+
+
+### Histograms
+```{r}
+# Plotting histograms
+fac_cols_2 = c('weekend','revenue','visitortype','traffictype')
+
+columns_2 = colnames(select(df1, all_of(fac_cols_2)))
+
+p_2 = list()
+options(repr.plot.width = 10, repr.plot.height = 6)
+for (i in 1:4){
+  p_2[[i]] = ggplot(df, aes_string(columns_2[i])) + geom_bar(color = 'darkmagenta') + labs(y = 'Frequency', x = '', title = toupper(columns_2[i])) +
+  theme(plot.title = element_text(size = 10),
+       axis.title.y = element_text(size = 10))
+}
+
+do.call(grid.arrange, p_2)
+```
+
+
+
+
+```{r}
+# Plotting histograms
+fac_cols = c('operatingsystems','month','region','browser')
+
+columns = colnames(select(df1, all_of(fac_cols)))
+
+p = list()
+options(repr.plot.width = 10, repr.plot.height = 7)
+for (i in 1:4){
+  p[[i]] = ggplot(df, aes_string(columns[i])) + geom_bar(color = 'purple') + labs(y = 'Frequency', x = '', title = toupper(columns[i])) +
+  theme(plot.title = element_text(size = 10),
+       axis.title.y = element_text(size = 10))
+}
+
+do.call(grid.arrange, p)
+```
+
+
+
+```{r}
+# Plotting boxplots
+options(repr.plot.width = 11, repr.plot.height = 5)
+ggplot(df1, aes(month, productrelated, col = weekend)) + 
+  geom_boxplot() + 
+  labs(x = 'Month', y = 'Product related', title = 'Checking outliers in the product related feature') + 
+  theme(legend.position = 'top', legend.text = element_text(size = 10),
+       plot.title = element_text(size = 11, color = 'gold', face = 'bold'))
+```
+The visualization shows that during weekdays the outliers tend to be high
+
+### Bivariate
+### 
+
+```{r}
+
+# Plotting density plots to check for distributions
+options(repr.plot.width = 11, repr.plot.height = 5)
+p1 = ggplot(df1, aes(productrelated, col = revenue)) + 
+  geom_density(aes(fill = revenue), alpha = 0.4) + 
+  labs(x = 'Product related', y = 'Density', title = '') + 
+  theme(legend.position = 'none', 
+       plot.title = element_text(size = 12)) 
+
+p2 = ggplot(df1, aes(bouncerates, col = revenue)) + 
+  geom_density(aes(fill = revenue), alpha = 0.4) + 
+  labs(x = 'Bouncerates', y = '', title = '') + 
+  theme(legend.position = 'top') 
+
+p3 = ggplot(df1, aes(exitrates, col = revenue)) + 
+  geom_density(aes(fill = revenue), alpha = 0.4) + 
+  labs(x = 'exitrates', y = '', title = '') + 
+  theme(legend.position = 'none', 
+       plot.title = element_text(size = 12)) 
+
+grid.arrange(p1, p2, p3, ncol = 3, top = textGrob("Density plots to show distributions",gp=gpar(fontsize=13,font=3, color = 'darkmagenta')))
+```
+
+###Multivariate
+
+```{r}
+### Getting the correlation between the numeric variables
+
+corr_df <- cor(num)
+corr_df
+```
+
+
+```{r}
+# Plotting a correlogram to check for correlations
+options(repr.plot.width = 6, repr.plot.height = 5)
+
+corr = round(cor(select_if(df1, is.numeric)), 2)
+ggcorrplot(corr, hc.order = T, ggtheme = ggplot2::theme_gray,
+   colors = c("#6D9EC1", "white", "#E46726"), lab = F)
+```
+
+```{r}
+### Showing correlation using correlation plot
+
+corrplot(corr_df, type = "upper", order = "hclust", 
+         tl.col = "black", tl.srt = 45,main="Correlation plots of numerics")
+```
+
+### Scatter plots
+```{r}
+# Plotting scatter plots to check for correlations
+options(repr.plot.width = 11, repr.plot.height = 5)
+
+Product = ggplot(df1, aes(productrelated, productrelated_duration, col = revenue)) + 
+    geom_point() + theme(legend.position = 'none') + 
+    labs(x='Product related', y ='Product related duration')
+grid.arrange(Product, 
+             top = textGrob("Scatter plots to show correlations",gp=gpar(fontsize=14,font=3, color = 'darkmagenta')))
+```
+
+
+```{r}
+Informational = ggplot(df1, aes(informational, informational_duration, col = revenue)) + 
+    geom_point() + theme(legend.position = 'none') + 
+    labs(x = 'Informational', y = 'Informational duration')
+grid.arrange(Informational, 
+             top = textGrob("Scatter plots to show correlations",gp=gpar(fontsize=14,font=3, color = 'darkmagenta')))
+```
+
+
+```{r}
+duration = ggplot(df1, aes(administrative, administrative_duration, col = revenue)) +
+    geom_point() + theme(legend.position = 'none') +
+    labs(x = 'Administrative', y = 'Administrative duration')
+grid.arrange(duration, 
+             top = textGrob("Scatter plots to show correlations",gp=gpar(fontsize=14,font=3, color = 'darkmagenta')))
+```
+
+
+```{r}
+# Creating a copy of the cleaned dataframe
+final_df = data.table::copy(df1)
+```
+
+
+
+
+# Implement the Solution
+
+### Hierachical clustering
+
+
+
+```{r}
+### Encoding categorical variables
+month = data.frame(model.matrix(~0+df1$month))
+operatingsystems = data.frame(model.matrix(~0+df1$operatingsystems))
+browser = data.frame(model.matrix(~0+df1$browser))
+region = data.frame(model.matrix(~0+df1$region))
+traffictype = data.frame(model.matrix(~0+df1$traffictype))
+visitortype = data.frame(model.matrix(~0+df1$visitortype))
+weekend = data.frame(model.matrix(~0+df1$weekend))
+revenue = data.frame(model.matrix(~0+df1$revenue))
+
+```
+
+
+```{r}
+# Dropping columns which have already encoded
+drop_cols = c('month','operatingsystems','browser','region','traffictype','visitortype','weekend', 'revenue')
+df1 = select(data.frame(cbind(df1,month,operatingsystems,browser, region,traffictype, visitortype,weekend, revenue)), -drop_cols)
+```
+
+
+
+```{r}
+### Scale the data then apply clustering
+dfz <- scale(df1)
+
+### We now use the R function hclust() for hierarchical clustering
+res_hierachical = hclust(dist(dfz, method = 'euclidean'), method = 'ward.D2')
+# ---
+# 
+plot(res_hierachical, cex = 0.6, hang = -1)
+
+```
+
+
+
+```{r}
+### Normalising the data
+df2 = as.data.frame(apply(df1, 2,  function(x) (x - min(x))/max(x) - min(x)))
+```
+
+
+```{r}
+#### The euclidean distance and the ward2 method has been used to perform hierachical clustering
+hierachical_res = hclust(dist(df2, method = 'euclidean'), method = 'ward.D2')
+
+#### Visualizing the hierachical dendogram
+options(repr.plot.width = 11, repr.plot.height = 6)
+plot(hierachical_res, cex = 0.6, hang = -1)
+```
+
+
+### K-Mean Clustering
+
+
+```{r}
+# Performing clustering with the optimal number  of centroids(k)=3
+kmeans_res = kmeans(df2, 3)
+
+# Checking the cluster centers of each variable
+kmeans_res$centers
+```
+
+```{r}
+# Previewing the size of observations in each cluster
+kmeans_res$size
+```
+
+
+```{r}
+# Visualising the clusters of the whole dataset
+options(repr.plot.width = 11, repr.plot.height = 6)
+fviz_cluster(kmeans_res, df2)
+```
+
+```{r}
+# Determining Optimal clusters (k) Using Average Silhouette Method
+
+fviz_nbclust(df2,FUNcluster = kmeans, method = 'silhouette' )
+```
+
+```{r}
+# Performing clustering with the optimal number  of centroids(k)=10
+kmeans_res = kmeans(df2, 10)
+
+# Checking the cluster centers of each variable
+kmeans_res$centers
+```
+
+```{r}
+# Previewing the size of observations in each cluster
+kmeans_res$size
+```
+
+
+```{r}
+# Visualising the clusters of the whole dataset
+options(repr.plot.width = 11, repr.plot.height = 6)
+fviz_cluster(kmeans_res, df2)
+```
+
+
+```{r}
+# Checking how some features have been clustered
+options(repr.plot.width = 11, repr.plot.height = 6)
+
+p1 = ggplot(df2, aes(productrelated, productrelated_duration, col = kmeans_res$cluster)) + 
+    geom_point() + theme(legend.position = 'none') + 
+    labs(x='Product related', y ='Product related duration')
+
+p2 = ggplot(df2, aes(administrative, administrative_duration, col = kmeans_res$cluster)) +
+    geom_point() + theme(legend.position = 'none') +
+    labs(x = 'Administrative', y = 'Administrative duration')
+
+grid.arrange(p1, p2, ncol = 2, top = textGrob("Scatter plots to show clusters",gp=gpar(fontsize=14,font=3, color = 'darkmagenta')))
+```
+
+
+### Conclussion
+The output is hardly intepratable since their is no mathematical objectives
+Time consuming  before computation is complete
+Scale sensitive when using normalization and scaling  the results are different from each other.
+
+Since, the clusters of hierachical have no mathematical objectives. Therefore, kmeans clustering should be given preferance when clustering customer groups.
+
+#Follow up Questions
